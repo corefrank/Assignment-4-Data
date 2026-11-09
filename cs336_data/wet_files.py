@@ -16,7 +16,7 @@ from warcio.warcwriter import WARCWriter
 from cs336_data.common import get_shared_assets_path
 from cs336_data.modal_utils import VOLUME_MOUNTS, app, build_image
 from furu import Furu
-
+from cs336_data.identify_language import identify_language
 BASE_URL = "https://data.commoncrawl.org/"
 
 
@@ -28,9 +28,13 @@ class _EnglishWetFile(Furu[Path]):
         output_path = self.data_dir / "data.warc.wet.gz"
 
         self.logger.info("Loading English language identifier")
-        is_english: Callable[[str], bool] = "TODO"
-        assert is_english != "TODO", "you need to implement is_english. we use probability >= 0.7 with https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
 
+        def is_english(text: str) -> bool:
+            if not text.strip():
+                return False
+
+            language, probability = identify_language(text.replace("\n", " "))
+            return language == "en" and probability >= 0.7
         total_text = 0
         skipped_text = 0
         self.logger.info("Processing WET chunk (%d files)", len(self.chunk_urls))

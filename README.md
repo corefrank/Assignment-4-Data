@@ -1,80 +1,54 @@
-# CS336 Spring 2026 Assignment 4: Data
+# Strong Filtering update for CS336 Assignment 4 local pipeline
 
-For a full description of the assignment, see the assignment handout at
-[cs336_assignment4_data.pdf](./cs336_assignment4_data.pdf)
+This update changes only `scripts/filter_wet_data.py` and `scripts/run_local_a4.py`.
+The original baseline behavior remains the default. Use `--strong-filter` to
+activate the additional, transparent heuristics. It **does not** claim to use
+an actual trained quality classifier.
 
-If you see any issues with the assignment handout or code, please feel free to
-raise a GitHub issue or open a pull request with a fix.
+## Install
 
-## Setup
+From the CS336 project root, first back up your current files:
 
-This directory is organized as follows:
-
-- [`./cs336_basics`](./cs336_basics): This module contains the staff 
-  implementation of the language model from assignment 1. You will use this training code
-  to train an LM on your filtered data. You should not modify the training logic, since
-  your leaderboard submission must use it exactly.
-- [`./cs336_data`](./cs336_data): This folder is basically empty! This is the
-  module where you will implement code to filter and process the data.
-
-Visually, it should look something like:
-
-``` sh
-.
-├── cs336_basics  # A python module named cs336_basics
-│   └── ... an optimized training implementation ...
-├── cs336_data  # TODO(you): code that you'll write for assignment 4
-│   ├── __init__.py
-│   └── ... TODO(you): any other files or folders you need for assignment 4 ...
-├── README.md
-├── pyproject.toml
-└── ... TODO(you): other files or folders you need for assignment 4 ...
+```bash
+cp scripts/filter_wet_data.py scripts/filter_wet_data.baseline.py
+cp scripts/run_local_a4.py scripts/run_local_a4.baseline.py
+unzip -o a4_strong_filter_update.zip -d .
 ```
 
-As in previous assignments, we use `uv` to manage dependencies.
+## Run the same original real WET input
 
-## Downloading data
-
-### For students
-
-Data is available at `/shared-data`, such as `uv run modal shell ./scripts/download_data.py::main --cmd "ls -l /shared-data"`
-
-To only download the files needed for running offline, run `uv run scripts/download_data.py --offline-only`.
-To download all data for the students, run `uv run modal run scripts/download_data.py`
-
-### For non-students
-
-To only download the files needed for running offline, run `uv run scripts/download_data.py --offline-only`.
-
-Implement the method `is_english` in [`./cs336_data/wet_files.py`](./cs336_data/wet_files.py) before downloading the full non-offline data.
-
-#### Modal
-
-Remove `environment_name` from `shared_data_volume` in [`./cs336_data/modal_utils.py`](./cs336_data/modal_utils.py)
-
-```python
-uv run modal run scripts/download_data.py
+```bash
+uv run python scripts/run_local_a4.py \
+  local-shared-data/CC/example.warc.wet.gz \
+  --work-dir data/a4_full_strong \
+  --strong-filter
 ```
 
-#### Non-modal
+Do not add `--quality-filter` unless you actually trained the fastText classifier.
+Do not overwrite your existing `data/a4_full_example` baseline results.
 
-Change the path in [`./cs336_data/common.py`](./cs336_data/common.py) and run `uv run scripts/download_data.py`.
+## Compare results
 
-Consider changing `n_files` for `EnglishWetFiles` in [`./cs336_data/wet_files.py`](./cs336_data/wet_files.py) if you want to download less than 2.5k WET files.
-
-## Training on Modal
-
-The Modal entrypoint in [`./scripts/train.py`](./scripts/train.py) contains the full training config; pass the path to your GPT-2-tokenized training data with `--train-bin`.
-
-The final training run uses 8 B200 GPUs:
-
-```sh
-uv run modal run scripts/train.py --train-bin /root/data/your_data.bin
+```bash
+uv run python - <<'PYCMD'
+import json
+from pathlib import Path
+for p in [Path('data/a4_full_example/pipeline_report.json'), Path('data/a4_full_strong/pipeline_report.json')]:
+    d=json.loads(p.read_text())
+    print(p)
+    print('seen=',d['filter']['documents_seen'],
+          'kept=',d['filter']['documents_kept'],
+          'rejected=',d['filter']['rejected_by_reason'],
+          'after_dedup=',d['dedup']['documents_after_minhash'],
+          'tokens=',d['tokenization']['tokens'],
+          'runtime_s=',round(sum(d[k]['runtime_seconds'] for k in ('filter','dedup','tokenization')),2))
+PYCMD
 ```
 
-## Submitting
+## Method
 
-To submit, run `./test_and_make_submission.sh` . This script will install your
-code's dependencies, run tests, and create a zip with the output. We
-should be able to unzip your submitted tarball and run
-`./test_and_make_submission.sh` to verify your test results.
+Rules inspect the original (real) WET text; they reject unusual scarcity of
+alphabetic words, low lexical diversity, navigation-heavy documents, and highly
+repeated three-word sequences. These are generic rules, not hard-coded URLs or
+sample-specific markers. Any changes in the output must be checked by human
+sampling. Lower token count is **not** direct evidence of higher LM quality.
